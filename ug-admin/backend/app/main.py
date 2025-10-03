@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging, RequestIDMiddleware
 from app.core.errors import setup_error_handlers
+from app.core.auth import setup_auth_error_handlers
 from app.api.v1 import api_router
 
 
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     
     # Setup error handlers
     setup_error_handlers(app)
+    setup_auth_error_handlers(app)
     
     # Include API routes
     app.include_router(api_router)

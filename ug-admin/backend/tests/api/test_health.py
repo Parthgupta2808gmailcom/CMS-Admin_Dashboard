@@ -58,8 +58,8 @@ class TestHealthEndpoints:
         assert "version" in data
         assert "environment" in data
         
-        # Verify response content (placeholder status)
-        assert data["status"] == "starting"
+        # Verify response content (now includes database check)
+        assert data["status"] in ["up", "down"]
         assert isinstance(data["version"], str)
         assert isinstance(data["environment"], str)
     
@@ -121,7 +121,7 @@ class TestHealthEndpoints:
         
         # Verify different status values
         assert liveness_data["status"] == "ok"
-        assert readiness_data["status"] == "starting"
+        assert readiness_data["status"] in ["up", "down"]
     
     @pytest.mark.asyncio
     async def test_health_endpoints_async(self):
@@ -142,7 +142,7 @@ class TestHealthEndpoints:
             readiness_response = await client.get("/api/v1/health/readiness")
             assert readiness_response.status_code == 200
             readiness_data = readiness_response.json()
-            assert readiness_data["status"] == "starting"
+            assert readiness_data["status"] in ["up", "down"]
 
 
 class TestRootEndpoint:

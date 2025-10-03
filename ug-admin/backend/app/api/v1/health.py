@@ -5,12 +5,14 @@ This module provides liveness and readiness probes following Kubernetes
 and cloud-native best practices for service health monitoring.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.core.logging import get_logger, log_request_info
 from app.core.config import settings
+from app.core.db import check_firestore
+from app.core.errors import AppError
 
 # Create router for health endpoints
 router = APIRouter(prefix="/health", tags=["health"])
@@ -23,6 +25,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     environment: str
+    database: Optional[Dict[str, Any]] = None
 
 
 @router.get("/liveness", response_model=HealthResponse)
@@ -55,11 +58,10 @@ async def liveness_check(request: Request) -> Dict[str, Any]:
 @router.get("/readiness", response_model=HealthResponse)
 async def readiness_check(request: Request) -> Dict[str, Any]:
     """
-    Readiness probe endpoint.
+    Readiness probe endpoint with Firestore connectivity check.
     
     This endpoint indicates whether the service is ready to serve
-    traffic. In future phases, this will include database connectivity
-    checks and other dependency validations.
+    traffic by checking database connectivity and other dependencies.
     
     Returns:
         Health status indicating the service is ready
@@ -70,12 +72,68 @@ async def readiness_check(request: Request) -> Dict[str, Any]:
         message="Readiness check requested"
     )
     
-    logger.info("Readiness check performed")
-    
-    # TODO: In Phase 2, add Firestore connectivity check
-    # For now, return a placeholder status
-    return {
-        "status": "starting",  # Placeholder until Firestore integration
-        "version": settings.app_version,
-        "environment": settings.env
-    }
+    try:
+        # Check Firestore connectivity
+        db_status = check_firestore()
+        
+        logger.info(
+            "Readiness check successful",
+            extra={
+                "firestore_status": db_status["status"],
+                "project_id": db_status.get("project_id"),
+                "collections_count": db_status.get("collections_count")
+            }
+        )
+        
+        return {
+            "status": "up",
+            "version": settings.app_version,
+            "environment": settings.env,
+            "database": {
+                "status": db_status["status"],
+                "project_id": db_status.get("project_id"),
+                "collections_count": db_status.get("collections_count")
+            }
+        }
+        
+    except AppError as e:
+        logger.error(
+            f"Readiness check failed: {e.message}",
+            extra={
+                "error_code": e.code,
+                "error_details": e.details,
+                "endpoint": "readiness"
+            }
+        )
+        
+        return {
+            "status": "down",
+            "version": settings.app_version,
+            "environment": settings.env,
+            "database": {
+                "status": "down",
+                "error": e.message,
+                "code": e.code
+            }
+        }
+        
+    except Exception as e:
+        logger.error(
+            f"Unexpected error in readiness check: {str(e)}",
+            extra={
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "endpoint": "readiness"
+            }
+        )
+        
+        return {
+            "status": "down",
+            "version": settings.app_version,
+            "environment": settings.env,
+            "database": {
+                "status": "down",
+                "error": "Unexpected error",
+                "code": "INTERNAL"
+            }
+        }
